@@ -2,7 +2,7 @@
   "claudeModelId": "claude-sonnet-4-5",
   "turnThreshold": 5,
   "struggleConsecutive": 2,
-  "autoMode": false,
+  "autoMode": true,
   "strugglePatterns": [
     "i'm not sure",
     "i'm not able",

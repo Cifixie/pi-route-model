@@ -196,10 +196,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("route-model", {
 		description:
-			"Show route-model status, or '/route-model switch' to toggle between local and Claude",
+			"Show status · 'switch' toggles model · 'auto' toggles auto-switch mode",
 		getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
 			const options = [
 				{ value: "switch", label: "Toggle between local and Claude" },
+				{ value: "auto", label: "Toggle auto-switch mode on/off" },
 			];
 			const filtered = options.filter((i) => i.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -214,8 +215,23 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			if (String(args).trim() === "switch") {
+			const arg = String(args).trim();
+
+			if (arg === "switch") {
 				await doToggleModel(ctx, cfg);
+				return;
+			}
+
+			if (arg === "auto") {
+				cfg.autoMode = !cfg.autoMode;
+				ctx.ui.notify(
+					`🔧 route-model: auto-switch ${cfg.autoMode ? "ON — will switch automatically" : "OFF — will ask before switching"}`,
+					"info",
+				);
+				ctx.ui.setStatus(
+					"route-model",
+					cfg.autoMode ? "auto ON" : "auto OFF",
+				);
 				return;
 			}
 
@@ -224,13 +240,15 @@ export default function (pi: ExtensionAPI) {
 				[
 					"🔧 route-model status",
 					"",
-					`Model: ${active ? "🟡 Local (monitoring ON)" : "🟢 Cloud (monitoring OFF)"}`,
-					`Turn threshold: ${cfg.turnThreshold} (this task)`,
+					`Model:     ${active ? "🟡 Local (monitoring ON)" : "🟢 Cloud (monitoring OFF)"}`,
+					`Auto-mode: ${cfg.autoMode ? "✅ ON (switches automatically)" : "🔕 OFF (asks first)"}`,
+					`Threshold: ${cfg.turnThreshold} turns`,
 					`Struggling turns: ${consecutiveStruggling} consecutive`,
 					`Turns this task: ${turnIndex}`,
-					hasAlerted ? "⚠️ Alert was shown for this task" : "✅ All clear",
+					hasAlerted ? "⚠️ Alert was shown for this task" : "✅ No alert yet",
 					"",
-					"Run '/route-model switch' to toggle between local and Claude.",
+					"'/route-model switch' — toggle model",
+					"'/route-model auto'   — toggle auto-switch",
 				].join("\n"),
 				"info",
 			);
