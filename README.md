@@ -1,6 +1,6 @@
 # pi-route-model
 
-A [pi](https://pi.us) extension that watches your local model struggle and switches to Claude when a task outgrows what the model on your machine can handle — and back again when you're done.
+A [pi](https://pi.dev/) extension that watches your local model struggle and switches to Claude when a task outgrows what the model on your machine can handle — and back again when you're done.
 
 ## How it works
 
