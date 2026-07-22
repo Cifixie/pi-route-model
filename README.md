@@ -29,17 +29,17 @@ Then reload pi or start a new session.
 Edit `config/config.json` (gitignored — your personal settings stay local):
 
 | Key | Default | Description |
-|-----|---------|-------------|
+| ----- | --------- | ------------- |
 | `claudeModelId` | `claude-sonnet-4-5` | Claude model to switch to. Falls back to the first available Anthropic model if not found. |
 | `turnThreshold` | `5` | Turns before the alert can fire for a task. |
 | `struggleConsecutive` | `2` | Consecutive struggling turns required (currently informational). |
-| `autoMode` | `false` | `true` = switch automatically without asking. `false` = show a confirm prompt. |
+| `autoMode` | `true` | `true` = switch automatically (both ways). `false` = show a confirm prompt before each switch. |
 | `strugglePatterns` | (see example) | Lowercase phrases to watch for in assistant responses. |
 
 ## Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/route-model` | Show current status (model, turns, struggles) |
 | `/route-model switch` | Toggle between local and Claude |
 | `switch to claude` / `use claude` | Same as above, typed as a message |
@@ -66,5 +66,4 @@ pi-route-model/
 
 ## Known limitations
 
-- Struggle detection is phrase-based — it can miss struggle not expressed in words, and can rarely false-positive on assistant messages that happen to contain a matching phrase.
-- Only local→Claude switching is monitored automatically. Claude→local is always manual (`/route-model switch`).
+- Struggle detection is phrase-based — it can miss struggle not expressed in words, and can rarely false-positive on an assistant message that happens to contain a matching phrase.
