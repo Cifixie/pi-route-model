@@ -1,0 +1,21 @@
+{
+  "claudeModelId": "claude-sonnet-4-5",
+  "turnThreshold": 5,
+  "struggleConsecutive": 2,
+  "autoMode": false,
+  "strugglePatterns": [
+    "i'm not sure",
+    "i'm not able",
+    "i don't know",
+    "could you clarify",
+    "it might be",
+    "let me try again",
+    "let me attempt",
+    "sorry i can't",
+    "this is difficult",
+    "i cannot determine",
+    "i am unable",
+    "perhaps",
+    "i think you need"
+  ]
+}
