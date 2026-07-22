@@ -228,10 +228,7 @@ export default function (pi: ExtensionAPI) {
 					`🔧 route-model: auto-switch ${cfg.autoMode ? "ON — will switch automatically" : "OFF — will ask before switching"}`,
 					"info",
 				);
-				ctx.ui.setStatus(
-					"route-model",
-					cfg.autoMode ? "auto ON" : "auto OFF",
-				);
+				ctx.ui.setStatus("route-model", cfg.autoMode ? "auto ON" : "auto OFF");
 				return;
 			}
 
@@ -278,7 +275,22 @@ export default function (pi: ExtensionAPI) {
 	// ── Per-task / per-turn monitoring ──────────────────────────────
 
 	pi.on("before_agent_start", async (_event: any, ctx: any) => {
-		if (!isLocalModel(ctx.model)) return;
+		if (!isLocalModel(ctx.model)) {
+			// On Claude — offer / auto-switch back to local for the new task.
+			const cfg = resolveConfig();
+			if (!cfg) return;
+
+			if (cfg.autoMode) {
+				await switchToLocal(ctx);
+			} else {
+				const ok = await ctx.ui.confirm(
+					"route-model",
+					"New task starting — switch back to local model?",
+				);
+				if (ok) await switchToLocal(ctx);
+			}
+			return;
+		}
 		resetTaskState();
 	});
 
@@ -410,6 +422,28 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	async function switchToLocal(ctx: any) {
+		const localModel = findLocalModel(ctx.modelRegistry);
+		if (!localModel) {
+			ctx.ui.notify(
+				"route-model: no local model found. Add one via /model first.",
+				"error",
+			);
+			return;
+		}
+		const success = await pi.setModel(localModel);
+		if (!success) {
+			ctx.ui.notify("route-model: failed to switch to local model.", "error");
+			return;
+		}
+		resetTaskState();
+		ctx.ui.notify(
+			`✅ route-model: switched back to local (${localModel.name || localModel.id})`,
+			"info",
+		);
+		ctx.ui.setStatus("route-model", "Now on local");
+	}
+
 	async function doToggleModel(ctx: any, cfg: Config) {
 		const isCurrentlyLocal = isLocalModel(ctx.model);
 
@@ -433,27 +467,7 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("✅ route-model: switched to Claude", "info");
 			ctx.ui.setStatus("route-model", "Now on Claude");
 		} else {
-			const localModel = findLocalModel(ctx.modelRegistry);
-			if (!localModel) {
-				ctx.ui.notify(
-					"route-model: no local model found. Add one via /model first.",
-					"error",
-				);
-				return;
-			}
-			const success = await pi.setModel(localModel);
-			if (!success) {
-				ctx.ui.notify(
-					"route-model: failed to switch to local model.",
-					"error",
-				);
-				return;
-			}
-			ctx.ui.notify(
-				`✅ route-model: switched back to local (${localModel.name || localModel.id})`,
-				"info",
-			);
-			ctx.ui.setStatus("route-model", "Now on local");
+			await switchToLocal(ctx);
 		}
 	}
 }
