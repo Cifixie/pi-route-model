@@ -1,0 +1,6 @@
+{
+  "name": "pi-route-model",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
