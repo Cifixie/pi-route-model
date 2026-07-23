@@ -115,7 +115,10 @@ function extractAssistantText(message: Message): string {
 	return "";
 }
 
-function isLocalModel(model: Model | undefined, cloudProvider: string): boolean {
+function isLocalModel(
+	model: Model | undefined,
+	cloudProvider: string,
+): boolean {
 	if (!model) return false;
 	return !model.provider.toLowerCase().includes(cloudProvider.toLowerCase());
 }
@@ -161,7 +164,9 @@ function findLocalModel(
 
 	// Final fallback: any non-cloud-provider model
 	const cloudProv = (cloudProvider || DEFAULT_CLOUD_PROVIDER).toLowerCase();
-	return modelRegistry.getAll().find((m: any) => m.provider.toLowerCase() !== cloudProv);
+	return modelRegistry
+		.getAll()
+		.find((m: any) => m.provider.toLowerCase() !== cloudProv);
 }
 
 // ── Extension ───────────────────────────────────────────────────────
