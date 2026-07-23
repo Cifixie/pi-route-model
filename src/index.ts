@@ -514,10 +514,7 @@ export default function (pi: ExtensionAPI) {
 
 	async function switchToLocal(ctx: any) {
 		const cfg = resolveConfig();
-		const localModel = findLocalModel(
-			ctx.modelRegistry,
-			cfg?.localModelIds,
-		);
+		const localModel = findLocalModel(ctx.modelRegistry, cfg?.localModelIds);
 		if (!localModel) {
 			ctx.ui.notify(
 				"route-model: no local model found. Add one via /model first.",
