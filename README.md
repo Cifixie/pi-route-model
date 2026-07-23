@@ -64,7 +64,17 @@ The alert fires at most once per task. After switching, monitoring resets automa
 ```
 pi-route-model/
 ├── src/
-│   └── index.ts          # Extension entry point (pi loads this)
+│   ├── index.ts               # Entry point (pi loads this) — wires everything together
+│   ├── types.ts                 # Config, TurnState, AutocompleteItem
+│   ├── constants.ts              # Default thresholds/provider
+│   ├── config.ts                  # Config loading + cloud provider resolution
+│   ├── model-utils.ts              # Local/cloud model detection & lookup
+│   ├── struggle-detection.ts        # Struggle-phrase + tool-failure signal logic
+│   ├── task-state.ts                 # Mutable per-task/session state
+│   ├── actions.ts                     # User-facing actions (switch/prompt/toggle)
+│   └── handlers/
+│       ├── lifecycle.ts                # session/model/turn lifecycle event handlers
+│       └── interaction.ts               # /route-model command + natural language
 ├── config/
 │   ├── config.example.json   # Committed template — copy to config.json
 │   └── config.json           # Your settings (gitignored)
