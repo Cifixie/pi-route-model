@@ -136,8 +136,6 @@ function findCloudModel(
 		.getAll()
 		.find((m: any) => m.provider.toLowerCase() === cloudProvider.toLowerCase());
 }
-	return modelRegistry.getAll().find((m: any) => m.provider === "anthropic");
-}
 
 function findLocalModel(
 	modelRegistry: any,
@@ -356,7 +354,6 @@ export default function (pi: ExtensionAPI) {
 			// offer to return to local now that the task is done.
 			// If user manually switched, respect that intent and stay on cloud.
 			if (cloudSwitchWasFromStruggle) {
-				const cfg = resolveConfig();
 				if (!cfg) return;
 
 				if (cfg.autoMode) {
@@ -382,7 +379,6 @@ export default function (pi: ExtensionAPI) {
 		const cfg = resolveConfig();
 		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
 		if (!isLocalModel(ctx.model, cloudProvider)) return;
-		const cfg = resolveConfig();
 		if (!cfg) return;
 
 		const allEntries = ctx.sessionManager.getBranch();
@@ -433,10 +429,9 @@ export default function (pi: ExtensionAPI) {
 		const cfg = resolveConfig();
 		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
 		if (!isLocalModel(ctx.model, cloudProvider)) return { action: "continue" };
+		if (!cfg) return { action: "continue" };
 
 		const lower = event.text.toLowerCase().trim();
-		const cfg = resolveConfig();
-		if (!cfg) return { action: "continue" };
 
 		const isSwitchPhrase =
 			lower === "switch to cloud" ||
@@ -529,10 +524,10 @@ export default function (pi: ExtensionAPI) {
 	async function switchToLocal(ctx: any) {
 		const cfg = resolveConfig();
 		const localModel = findLocalModel(
-		ctx.modelRegistry,
-		cfg?.localModelIds,
-		cfg?.cloudProvider,
-	);
+			ctx.modelRegistry,
+			cfg?.localModelIds,
+			cfg?.cloudProvider,
+		);
 		if (!localModel) {
 			ctx.ui.notify(
 				"route-model: no local model found. Add one via /model first.",
@@ -545,8 +540,6 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("route-model: failed to switch to local model.", "error");
 			return;
 		}
-		// Clear the struggle flag: we're back on local after a detour.
-		cloudSwitchWasFromStruggle = false;
 		// Clear the struggle flag: we're back on local after a detour.
 		cloudSwitchWasFromStruggle = false;
 		resetTaskState();
@@ -563,10 +556,10 @@ export default function (pi: ExtensionAPI) {
 
 		if (isCurrentlyLocal) {
 			const cloudModel = findCloudModel(
-			ctx.modelRegistry,
-			cloudProvider,
-			cfg.cloudModelId,
-		);
+				ctx.modelRegistry,
+				cloudProvider,
+				cfg.cloudModelId,
+			);
 			if (!cloudModel) {
 				ctx.ui.notify(
 					`route-model: no ${cloudProvider} model found. Add one via /model first.`,

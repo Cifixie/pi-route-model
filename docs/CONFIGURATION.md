@@ -42,14 +42,9 @@ The preferred cloud model to escalate to when local model struggles.
 
 **Notes**:
 
-- Must be an Anthropic model (e.g., `claude-opus-4-5`, `claude-sonnet-4-5`)
-- If the specified model is unavailable, route-model tries fallback models in this order:
-  1. `claude-sonnet-4-5`
-  2. `claude-sonnet-5`
-  3. `claude-sonnet-4-6`
-  4. `claude-opus-4-5`
-  5. First available Anthropic model
-- Requires valid Anthropic API key in Pi configuration
+- Must be a model ID belonging to your configured `cloudProvider` (default: Anthropic, e.g. `claude-opus-4-5`, `claude-sonnet-4-5`)
+- If the specified model ID isn't found, route-model falls back to the first available model from `cloudProvider`
+- Requires a valid API key for `cloudProvider` in Pi configuration
 
 ### `localModelIds` (string[], optional)
 
@@ -72,7 +67,7 @@ Preferred local models to use when monitoring is active or after restoration fro
 - route-model tries each model ID in order
 - Uses the first one available in your Pi model registry
 - If none are available, falls back to searching by provider (Ollama, LM Studio, OMLX, OpenAI)
-- Finally, uses any non-Anthropic model as a last resort
+- Finally, uses any model that isn't from `cloudProvider` as a last resort
 
 **Use case**:
 
@@ -179,30 +174,36 @@ Array of phrases (case-insensitive) that signal the model is uncertain or strugg
 
 ### API Keys
 
-route-model requires an Anthropic API key in your Pi configuration for cloud escalation to work.
+route-model requires a valid API key for your configured `cloudProvider` (default: Anthropic) in your Pi configuration for cloud escalation to work.
 
-Set the key via Pi:
+Set the key via Pi, e.g. for the default Anthropic provider:
 
 ```bash
 /model add claude-sonnet-4-5
 ```
 
+If you set `cloudProvider` to something else (e.g. `"openai"`), register a model from that provider instead:
+
+```bash
+/model add gpt-4  # example for cloudProvider: "openai"
+```
+
 ### Local Model Setup
 
-For monitoring to be active, you need a local model registered:
+For monitoring to be active, you need at least one model registered from a provider **other than** your configured `cloudProvider`:
 
-- **Ollama**, **LM Studio**, **OMLX**, or any non-Anthropic provider in Pi's model registry
+- **Ollama**, **LM Studio**, **OMLX**, or any other provider in Pi's model registry that isn't `cloudProvider`
 
 If no local model is configured, route-model will show a warning at startup but won't crash.
 
 ### Multi-Provider Setup
 
-route-model works with:
+route-model works with any providers registered in Pi:
 
-- **Local providers**: Ollama, LM Studio, OMLX, OpenAI (treated as local if non-Anthropic)
-- **Cloud provider**: Anthropic (Claude models)
+- **Local providers**: anything that is NOT the configured `cloudProvider` — Ollama, LM Studio, OMLX, OpenAI, etc.
+- **Cloud provider**: whatever you set `cloudProvider` to (default: Anthropic / Claude models)
 
-The extension automatically detects provider from `model.provider` field.
+The extension determines local vs. cloud by comparing `model.provider` against the configured `cloudProvider` (case-insensitive substring match). See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## Troubleshooting
 
@@ -228,21 +229,21 @@ Then reload/restart your Pi session.
 
 **Causes**:
 
-1. Cloud model ID in config doesn't exist
-2. Anthropic API key is missing or invalid
-3. Fallback models aren't available
+1. Cloud model ID in config doesn't exist for your configured `cloudProvider`
+2. API key for `cloudProvider` is missing or invalid
+3. No model from `cloudProvider` is registered at all
 
 **Fix**:
 
-- Verify `cloudModelId` matches a real Claude model
-- Run `/model add claude-sonnet-4-5` to set up Anthropic
-- Check your Anthropic API key is valid in Pi config
+- Verify `cloudModelId` matches a real model for your `cloudProvider`
+- Run `/model add <model-id>` to register a model from that provider
+- Check your API key for `cloudProvider` is valid in Pi config
 
 ### "no local model found"
 
 **Symptom**: When on cloud and trying to restore to local
 
-**Cause**: No non-Anthropic model is registered in Pi
+**Cause**: No model from a provider other than `cloudProvider` is registered in Pi
 
 **Fix**:
 

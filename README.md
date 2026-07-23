@@ -31,7 +31,9 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 
 | Key | Default | Description |
 | ----- | --------- | ------------- |
-| `cloudModelId` | `claude-sonnet-4-5` | Cloud model to switch to. Falls back to the first available Anthropic model if not found. |
+| `cloudProvider` | `anthropic` | Provider to treat as "cloud". Any other registered provider is treated as "local". |
+| `cloudModelId` | `claude-sonnet-4-5` | Cloud model to switch to. Falls back to the first available model from `cloudProvider` if not found. |
+| `localModelIds` | _(none)_ | Preferred local model IDs, tried in order. Falls back to the first available non-cloud-provider model if unset/unmatched. |
 | `turnThreshold` | `5` | Turns before the alert can fire for a task. |
 | `struggleConsecutive` | `2` | Consecutive struggling turns required (currently informational). |
 | `toolFailureThreshold` | `3` | Same tool failing consecutively before alert triggers. |

@@ -154,23 +154,26 @@ Now you'll see dialogs and can reject false positive alerts.
 **Symptom**:
 
 ```
-route-model: no cloud model found. Add one via /model first.
+route-model: no anthropic model found. Add one via /model first.
 ```
 
-**Cause**: Anthropic model not registered in Pi
+(The provider name shown is whatever you set `cloudProvider` to — defaults to `anthropic`.)
+
+**Cause**: No model from your configured `cloudProvider` is registered in Pi
 
 **Fix**:
 
 ```bash
 /model add claude-sonnet-4-5
-# Follow prompts to add your Anthropic API key
+# Or the appropriate model ID for your configured cloudProvider
+# Follow prompts to add the provider's API key
 ```
 
 **Verify**:
 
 ```bash
 /model list
-# Should show at least one "claude-" model available
+# Should show at least one model from your configured cloudProvider
 ```
 
 Then try `/route-model switch` manually to test.
@@ -182,20 +185,20 @@ Then try `/route-model switch` manually to test.
 **Symptom**:
 
 ```
-route-model: no API key for the cloud model. Check your config.
+route-model: no API key for the anthropic model. Check your config.
 ```
 
-**Cause**: Anthropic API key is missing or expired
+**Cause**: API key for your configured `cloudProvider` is missing or expired
 
 **Check**:
 
 ```bash
-/model list  # Does Anthropic model show? (might not validate key)
+/model list  # Does a model from cloudProvider show? (might not validate key)
 ```
 
 **Fix**:
 
-1. Verify your Anthropic API key is valid at <https://console.anthropic.com>
+1. Verify your `cloudProvider` API key is valid with that provider's console (e.g. <https://console.anthropic.com> for Anthropic)
 2. In Pi, re-add the model:
 
    ```bash
@@ -215,7 +218,7 @@ route-model: no API key for the cloud model. Check your config.
 route-model: no local model found. Add one via /model first.
 ```
 
-**Cause**: No local (non-Anthropic) model is registered
+**Cause**: No model from a provider other than your configured `cloudProvider` is registered
 
 **Fix**:
 
@@ -224,6 +227,8 @@ route-model: no local model found. Add one via /model first.
 # Search for "ollama", "lmstudio", or another local provider
 # Follow prompts to register a local model
 ```
+
+**Tip**: You can also pin specific fallbacks via `localModelIds` in config.json (see [CONFIGURATION.md](CONFIGURATION.md))
 
 **Common local providers**:
 
@@ -234,7 +239,7 @@ route-model: no local model found. Add one via /model first.
 **Verify**:
 
 ```bash
-/model list  # Should show a local model (non-Anthropic provider)
+/model list  # Should show a model from a provider other than cloudProvider
 ```
 
 ---

@@ -305,10 +305,12 @@ You: /route-model
 
 ```
 You: /route-model switch
-route-model: no cloud model found. Add one via /model first.
+route-model: no anthropic model found. Add one via /model first.
 ```
 
-**Fix**: Run `/model add claude-sonnet-4-5` to register Anthropic
+(The provider name in the message reflects your configured `cloudProvider`, e.g. `openai` instead of `anthropic`.)
+
+**Fix**: Run `/model add claude-sonnet-4-5` to register a model for your `cloudProvider`
 
 ### If local model is unavailable
 
@@ -317,15 +319,15 @@ You: /route-model switch
 route-model: no local model found. Add one via /model first.
 ```
 
-**Fix**: Run `/model add` to search and add a local model (Ollama, LM Studio, etc.)
+**Fix**: Run `/model add` to search and add a local model (Ollama, LM Studio, etc. — anything not your `cloudProvider`)
 
-### If Anthropic API key is missing
+### If cloud provider's API key is missing
 
 ```
-route-model: no API key for the cloud model. Check your config.
+route-model: no API key for the anthropic model. Check your config.
 ```
 
-**Fix**: Ensure Anthropic API key is set in Pi configuration
+**Fix**: Ensure a valid API key for your configured `cloudProvider` is set in Pi configuration
 
 ## Command Autocomplete
 
