@@ -14,6 +14,26 @@
 
 ## Configuration Reference
 
+### `cloudProvider` (string, optional)
+
+The name of the cloud provider to use for escalation.
+
+**Default**: `"anthropic"`
+
+**Examples**:
+
+- `"anthropic"` — use Anthropic Claude models
+- `"openai"` — use OpenAI models (GPT-4, etc.)
+- `"deepseek"` — use DeepSeek models
+- Any provider supported by Pi's model registry
+
+**Notes**:
+
+- This determines which provider is considered the "cloud" provider
+- All other providers are treated as "local" for escalation purposes
+- The extension will try to find a model from this provider when escalating
+- If omitted, defaults to "anthropic" for backward compatibility
+
 ### `cloudModelId` (string, required)
 
 The preferred cloud model to escalate to when local model struggles.

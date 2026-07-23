@@ -48,6 +48,7 @@ import { fileURLToPath } from "node:url";
 // ── Types ───────────────────────────────────────────────────────────
 
 interface Config {
+	cloudProvider?: string; // Cloud provider name (default: "anthropic")
 	cloudModelId: string;
 	localModelIds?: string[]; // Preferred local models in order; falls back to first available
 	turnThreshold: number;
@@ -68,6 +69,7 @@ interface TurnState {
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(EXTENSION_DIR, "../config/config.json");
 const DEFAULT_TOOL_FAILURE_THRESHOLD = 3;
+const DEFAULT_CLOUD_PROVIDER = "anthropic"; // Default to Anthropic if not specified in config
 
 /** Derive a "failure tag" from a tool result event: which specific thing
  *  failed, so the same failing tool increments the streak. */
@@ -113,35 +115,34 @@ function extractAssistantText(message: Message): string {
 	return "";
 }
 
-function isLocalModel(model: Model | undefined): boolean {
+function isLocalModel(model: Model | undefined, cloudProvider: string): boolean {
 	if (!model) return false;
-	return !model.provider.toLowerCase().includes("anthropic");
+	return !model.provider.toLowerCase().includes(cloudProvider.toLowerCase());
 }
 
 /** Find a cloud model by the configured ID, or fall back to the first
- *  available cloud model. */
+ *  available model from the cloud provider. */
 function findCloudModel(
 	modelRegistry: any,
+	cloudProvider: string,
 	preferredId: string,
 ): Model | undefined {
-	const byId = modelRegistry.find("anthropic", preferredId);
+	// First, try to find by the preferred ID
+	const byId = modelRegistry.find(cloudProvider, preferredId);
 	if (byId) return byId;
-	const candidates = [
-		"claude-sonnet-4-5",
-		"claude-sonnet-5",
-		"claude-sonnet-4-6",
-		"claude-opus-4-5",
-	];
-	for (const id of candidates) {
-		const m = modelRegistry.find("anthropic", id);
-		if (m) return m;
-	}
+
+	// Fall back to first available model from cloud provider
+	return modelRegistry
+		.getAll()
+		.find((m: any) => m.provider.toLowerCase() === cloudProvider.toLowerCase());
+}
 	return modelRegistry.getAll().find((m: any) => m.provider === "anthropic");
 }
 
 function findLocalModel(
 	modelRegistry: any,
 	preferredIds?: string[],
+	cloudProvider?: string,
 ): Model | undefined {
 	// First, try preferred IDs from config
 	if (preferredIds && preferredIds.length > 0) {
@@ -160,8 +161,9 @@ function findLocalModel(
 		if (models.length > 0) return models[0];
 	}
 
-	// Final fallback: any non-Anthropic model
-	return modelRegistry.getAll().find((m: any) => m.provider !== "anthropic");
+	// Final fallback: any non-cloud-provider model
+	const cloudProv = (cloudProvider || DEFAULT_CLOUD_PROVIDER).toLowerCase();
+	return modelRegistry.getAll().find((m: any) => m.provider.toLowerCase() !== cloudProv);
 }
 
 // ── Extension ───────────────────────────────────────────────────────
@@ -217,6 +219,7 @@ export default function (pi: ExtensionAPI) {
 		configLoadFailed = false;
 		config = undefined;
 		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
 		if (!cfg) {
 			ctx.ui.notify(
 				"route-model: config.json missing — copy config/config.example.json to config/config.json.",
@@ -225,7 +228,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		ctx.ui.notify(
-			isLocalModel(ctx.model)
+			isLocalModel(ctx.model, cloudProvider)
 				? "🔧 route-model: watching local model performance"
 				: "☁️ route-model: using cloud model — monitoring off",
 			"info",
@@ -247,6 +250,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args: any, ctx: any) => {
 			const cfg = resolveConfig();
+			const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
 			if (!cfg) {
 				ctx.ui.notify(
 					"route-model: config.json missing — copy config/config.example.json to config/config.json.",
@@ -272,7 +276,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const active = isLocalModel(ctx.model);
+			const active = isLocalModel(ctx.model, cloudProvider);
 			ctx.ui.notify(
 				[
 					"🔧 route-model status",
@@ -297,8 +301,10 @@ export default function (pi: ExtensionAPI) {
 	// ── Model tracking ──────────────────────────────────────────────
 
 	pi.on("model_select", async (event: any, ctx: any) => {
-		const wasCloud = !isLocalModel(event.previousModel);
-		const isCloud = !isLocalModel(event.model);
+		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		const wasCloud = !isLocalModel(event.previousModel, cloudProvider);
+		const isCloud = !isLocalModel(event.model, cloudProvider);
 
 		if (isCloud && !wasCloud) {
 			// Switched to cloud (struggle-detected or manual).
@@ -306,7 +312,7 @@ export default function (pi: ExtensionAPI) {
 			// Manual switches don't change the flag (it stays false).
 			resetTaskState();
 			ctx.ui.notify("✅ route-model: on cloud — monitoring off", "info");
-		} else if (isLocalModel(event.model) && wasCloud) {
+		} else if (isLocalModel(event.model, cloudProvider) && wasCloud) {
 			// User switched back to local — resume monitoring.
 			// Clear the flag: this was a manual switch, so future cloud usage is user-intent.
 			cloudSwitchWasFromStruggle = false;
@@ -321,7 +327,9 @@ export default function (pi: ExtensionAPI) {
 	// ── Tool execution monitoring: track consecutive failures ──────
 
 	pi.on("tool_execution_end", async (event: any, ctx: any) => {
-		if (!isLocalModel(ctx.model)) return;
+		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		if (!isLocalModel(ctx.model, cloudProvider)) return;
 		if (event.isError) {
 			const tag = failureTag(event);
 			if (tag === lastFailureTag) {
@@ -341,7 +349,9 @@ export default function (pi: ExtensionAPI) {
 	// ── Per-task / per-turn monitoring ──────────────────────────────
 
 	pi.on("before_agent_start", async (_event: any, ctx: any) => {
-		if (!isLocalModel(ctx.model)) {
+		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		if (!isLocalModel(ctx.model, cloudProvider)) {
 			// On cloud. If the extension switched here due to struggle detection,
 			// offer to return to local now that the task is done.
 			// If user manually switched, respect that intent and stay on cloud.
@@ -369,7 +379,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", async (_event: { turnIndex: number }, ctx: any) => {
-		if (!isLocalModel(ctx.model)) return;
+		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		if (!isLocalModel(ctx.model, cloudProvider)) return;
 		const cfg = resolveConfig();
 		if (!cfg) return;
 
@@ -418,7 +430,9 @@ export default function (pi: ExtensionAPI) {
 	// ── Input event: intercept natural-language switch phrases ───────
 
 	pi.on("input", async (event: any, ctx: any) => {
-		if (!isLocalModel(ctx.model)) return { action: "continue" };
+		const cfg = resolveConfig();
+		const cloudProvider = cfg?.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		if (!isLocalModel(ctx.model, cloudProvider)) return { action: "continue" };
 
 		const lower = event.text.toLowerCase().trim();
 		const cfg = resolveConfig();
@@ -514,7 +528,11 @@ export default function (pi: ExtensionAPI) {
 
 	async function switchToLocal(ctx: any) {
 		const cfg = resolveConfig();
-		const localModel = findLocalModel(ctx.modelRegistry, cfg?.localModelIds);
+		const localModel = findLocalModel(
+		ctx.modelRegistry,
+		cfg?.localModelIds,
+		cfg?.cloudProvider,
+	);
 		if (!localModel) {
 			ctx.ui.notify(
 				"route-model: no local model found. Add one via /model first.",
@@ -540,13 +558,18 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	async function doToggleModel(ctx: any, cfg: Config) {
-		const isCurrentlyLocal = isLocalModel(ctx.model);
+		const cloudProvider = cfg.cloudProvider || DEFAULT_CLOUD_PROVIDER;
+		const isCurrentlyLocal = isLocalModel(ctx.model, cloudProvider);
 
 		if (isCurrentlyLocal) {
-			const cloudModel = findCloudModel(ctx.modelRegistry, cfg.cloudModelId);
+			const cloudModel = findCloudModel(
+			ctx.modelRegistry,
+			cloudProvider,
+			cfg.cloudModelId,
+		);
 			if (!cloudModel) {
 				ctx.ui.notify(
-					"route-model: no cloud model found. Add one via /model first.",
+					`route-model: no ${cloudProvider} model found. Add one via /model first.`,
 					"error",
 				);
 				return;
@@ -554,7 +577,7 @@ export default function (pi: ExtensionAPI) {
 			const success = await pi.setModel(cloudModel);
 			if (!success) {
 				ctx.ui.notify(
-					"route-model: no API key for the cloud model. Check your config.",
+					`route-model: no API key for the ${cloudProvider} model. Check your config.`,
 					"error",
 				);
 				return;
