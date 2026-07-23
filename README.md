@@ -1,6 +1,6 @@
 # pi-route-model
 
-A [pi](https://pi.dev/) extension that watches your local model struggle and switches to Claude when a task outgrows what the model on your machine can handle — and back again when you're done.
+A [pi](https://pi.dev/) extension that watches your local model struggle and switches to the cloud when a task outgrows what the model on your machine can handle — and back again when you're done.
 
 ## How it works
 
@@ -10,7 +10,7 @@ Three simple signals, all observable at runtime — **no keyword guessing**, sco
 2. **Struggle phrases** — the assistant saying "I'm not sure", "let me try again", etc.
 3. **Tool failure streak** — the same tool failing 2+ consecutive times (restarts when any tool succeeds). Catches struggle the model never verbalises: an edit tool that keeps failing, a grep that returns nothing repeatedly, etc.
 
-When the current task exceeds your configured turn threshold AND shows at least one struggle signal, you get a prompt to switch to Claude. The switch happens **in-session** — no new session is created, Claude picks up with full history intact.
+When the current task exceeds your configured turn threshold AND shows at least one struggle signal, you get a prompt to switch to the cloud. The switch happens **in-session** — no new session is created, the cloud model picks up with full history intact.
 
 ## Install
 
@@ -31,7 +31,7 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 
 | Key | Default | Description |
 | ----- | --------- | ------------- |
-| `claudeModelId` | `claude-sonnet-4-5` | Claude model to switch to. Falls back to the first available Anthropic model if not found. |
+| `cloudModelId` | `claude-sonnet-4-5` | Cloud model to switch to. Falls back to the first available Anthropic model if not found. |
 | `turnThreshold` | `5` | Turns before the alert can fire for a task. |
 | `struggleConsecutive` | `2` | Consecutive struggling turns required (currently informational). |
 | `toolFailureThreshold` | `3` | Same tool failing consecutively before alert triggers. |
@@ -43,8 +43,8 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 | Command | Description |
 | --------- | ------------- |
 | `/route-model` | Show current status (model, turns, struggles) |
-| `/route-model switch` | Toggle between local and Claude |
-| `switch to claude` / `use claude` | Same as above, typed as a message |
+| `/route-model switch` | Toggle between local and cloud |
+| `switch to cloud` / `use cloud` | Same as above, typed as a message |
 | `are you struggling?` | Get a real-time assessment |
 
 ## Alert triggers

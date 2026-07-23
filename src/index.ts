@@ -1,8 +1,8 @@
 /**
  * route-model — "Know when to call the big guns"
  *
- * Watches the local model struggle and nudges you toward Claude when
- * a task clearly outgrows what the model on your machine can handle.
+ * Watches the local model struggle and nudges you toward a cloud model
+ * when a task clearly outgrows what the model on your machine can handle.
  *
  * Strategy: three simple signals, all observable at runtime — scoped to
  * the CURRENT task (reset on every new user prompt, not cumulative for
@@ -18,8 +18,8 @@
  *
  * When the current task exceeds your configured turn threshold AND
  * shows at least one struggle signal, you get a prompt to switch to
- * Claude. The switch happens in-session — no new session is created,
- * Claude picks up with full history intact.
+ * the cloud. The switch happens in-session — no new session is created,
+ * the cloud model picks up with full history intact.
  *
  * Config is loaded from ../config/config.json (relative to this file).
  * If it's missing/invalid, monitoring disables itself with one warning
@@ -48,7 +48,7 @@ import { fileURLToPath } from "node:url";
 // ── Types ───────────────────────────────────────────────────────────
 
 interface Config {
-	claudeModelId: string;
+	cloudModelId: string;
 	turnThreshold: number;
 	struggleConsecutive: number;
 	toolFailureThreshold: number;
@@ -117,7 +117,9 @@ function isLocalModel(model: Model | undefined): boolean {
 	return !model.provider.toLowerCase().includes("anthropic");
 }
 
-function findClaudeModel(
+/** Find a cloud model by the configured ID, or fall back to the first
+ *  available cloud model. */
+function findCloudModel(
 	modelRegistry: any,
 	preferredId: string,
 ): Model | undefined {
@@ -160,11 +162,10 @@ export default function (pi: ExtensionAPI) {
 	let lastFailureTag = "";
 	let hasAlerted = false;
 	let strugglingTurns: Message[] = [];
-	// Track whether the previous model (before the current task) was Claude.
-	// When a user manually switches to Claude, this stays true so the
-	// task-boundary handler knows to stay put until the user explicitly
-	// switches back. Resets on every new task.
-	let prevModelWasClaude = false;
+	// Track whether the most recent cloud switch came from struggle detection.
+	// If true, before_agent_start will offer to switch back to local.
+	// If false, user initiated the cloud switch and we respect that intent.
+	let cloudSwitchWasFromStruggle = false;
 
 	function resolveConfig(): Config | undefined {
 		if (configLoadFailed) return undefined;
@@ -223,7 +224,7 @@ export default function (pi: ExtensionAPI) {
 			"Show status · 'switch' toggles model · 'auto' toggles auto-switch mode",
 		getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
 			const options = [
-				{ value: "switch", label: "Toggle between local and Claude" },
+				{ value: "switch", label: "Toggle between local and cloud" },
 				{ value: "auto", label: "Toggle auto-switch mode on/off" },
 			];
 			const filtered = options.filter((i) => i.value.startsWith(prefix));
@@ -281,18 +282,22 @@ export default function (pi: ExtensionAPI) {
 	// ── Model tracking ──────────────────────────────────────────────
 
 	pi.on("model_select", async (event: any, ctx: any) => {
-		if (isLocalModel(event.model) && !isLocalModel(event.previousModel)) {
-			ctx.ui.notify(
-				"⚠️ route-model: switched to local model — monitoring for struggle",
-				"info",
-			);
-		} else if (
-			!isLocalModel(event.model) &&
-			isLocalModel(event.previousModel)
-		) {
+		const wasCloud = !isLocalModel(event.previousModel);
+		const isCloud = !isLocalModel(event.model);
+
+		if (isCloud && !wasCloud) {
+			// Switched to cloud (struggle-detected or manual).
+			// Note: we can't distinguish here, so the flag is already set by promptToSwitchTurn if applicable.
+			// Manual switches don't change the flag (it stays false).
+			resetTaskState();
+			ctx.ui.notify("✅ route-model: on cloud — monitoring off", "info");
+		} else if (isLocalModel(event.model) && wasCloud) {
+			// User switched back to local — resume monitoring.
+			// Clear the flag: this was a manual switch, so future cloud usage is user-intent.
+			cloudSwitchWasFromStruggle = false;
 			resetTaskState();
 			ctx.ui.notify(
-				"✅ route-model: switched to cloud model — monitoring off",
+				"⚠️ route-model: back on local — monitoring for struggle",
 				"info",
 			);
 		}
@@ -322,24 +327,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (_event: any, ctx: any) => {
 		if (!isLocalModel(ctx.model)) {
-			// If the previous model was Claude, the user chose to go there.
-			// Stay on Claude — don't interfere. They can switch back manually.
-			if (prevModelWasClaude) {
-				prevModelWasClaude = false;
-				return;
-			}
-			// Otherwise: struggle-driven switch. Normal task-boundary logic.
-			const cfg = resolveConfig();
-			if (!cfg) return;
+			// On cloud. If the extension switched here due to struggle detection,
+			// offer to return to local now that the task is done.
+			// If user manually switched, respect that intent and stay on cloud.
+			if (cloudSwitchWasFromStruggle) {
+				const cfg = resolveConfig();
+				if (!cfg) return;
 
-			if (cfg.autoMode) {
-				await switchToLocal(ctx);
-			} else {
-				const ok = await ctx.ui.confirm(
-					"route-model",
-					"New task starting — switch back to local model?",
-				);
-				if (ok) await switchToLocal(ctx);
+				if (cfg.autoMode) {
+					await switchToLocal(ctx);
+				} else {
+					const ok = await ctx.ui.confirm(
+						"route-model",
+						"New task starting — switch back to local model?",
+					);
+					if (ok) await switchToLocal(ctx);
+				}
 			}
 			return;
 		}
@@ -407,11 +410,11 @@ export default function (pi: ExtensionAPI) {
 		if (!cfg) return { action: "continue" };
 
 		const isSwitchPhrase =
-			lower === "switch to claude" ||
-			lower === "use claude" ||
-			lower === "claude please" ||
+			lower === "switch to cloud" ||
+			lower === "use cloud" ||
+			lower === "cloud please" ||
 			lower === "use the big model" ||
-			lower.startsWith("please switch to claude");
+			lower.startsWith("please switch to cloud");
 
 		if (isSwitchPhrase) {
 			pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
@@ -459,9 +462,11 @@ export default function (pi: ExtensionAPI) {
 
 		if (cfg.autoMode) {
 			ctx.ui.notify(
-				`🔧 route-model: detected struggle (${turnState.turnIndex} turns) — switching to Claude`,
+				`🔧 route-model: detected struggle (${turnState.turnIndex} turns) — switching to cloud`,
 				"info",
 			);
+			// Mark this as a struggle-driven switch so before_agent_start can restore.
+			cloudSwitchWasFromStruggle = true;
 			pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
 		} else {
 			const message = [
@@ -473,12 +478,15 @@ export default function (pi: ExtensionAPI) {
 					? `🔴 ${turnState.toolFailures} consecutive tool failure(s)`
 					: "",
 				"",
-				"Switch to Claude to continue with more capability?",
+				"Switch to cloud to continue with more capability?",
 			].join("\n");
 
 			const choice = await ctx.ui.confirm("route-model", message);
 
 			if (choice) {
+				// User confirmed the struggle-driven switch.
+				// Mark it so before_agent_start can restore.
+				cloudSwitchWasFromStruggle = true;
 				pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
 			} else {
 				ctx.ui.notify(
@@ -503,6 +511,10 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("route-model: failed to switch to local model.", "error");
 			return;
 		}
+		// Clear the struggle flag: we're back on local after a detour.
+		cloudSwitchWasFromStruggle = false;
+		// Clear the struggle flag: we're back on local after a detour.
+		cloudSwitchWasFromStruggle = false;
 		resetTaskState();
 		ctx.ui.notify(
 			`✅ route-model: switched back to local (${localModel.name || localModel.id})`,
@@ -515,24 +527,24 @@ export default function (pi: ExtensionAPI) {
 		const isCurrentlyLocal = isLocalModel(ctx.model);
 
 		if (isCurrentlyLocal) {
-			const claudeModel = findClaudeModel(ctx.modelRegistry, cfg.claudeModelId);
-			if (!claudeModel) {
+			const cloudModel = findCloudModel(ctx.modelRegistry, cfg.cloudModelId);
+			if (!cloudModel) {
 				ctx.ui.notify(
-					"route-model: no Claude model found. Add one via /model first.",
+					"route-model: no cloud model found. Add one via /model first.",
 					"error",
 				);
 				return;
 			}
-			const success = await pi.setModel(claudeModel);
+			const success = await pi.setModel(cloudModel);
 			if (!success) {
 				ctx.ui.notify(
-					"route-model: no API key for the Claude model. Check your config.",
+					"route-model: no API key for the cloud model. Check your config.",
 					"error",
 				);
 				return;
 			}
-			ctx.ui.notify("✅ route-model: switched to Claude", "info");
-			ctx.ui.setStatus("route-model", "Now on Claude");
+			ctx.ui.notify("✅ route-model: switched to cloud", "info");
+			ctx.ui.setStatus("route-model", "Now on cloud");
 		} else {
 			await switchToLocal(ctx);
 		}

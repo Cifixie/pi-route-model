@@ -1,5 +1,5 @@
 {
-  "claudeModelId": "claude-sonnet-4-5",
+  "cloudModelId": "claude-sonnet-4-5",
   "turnThreshold": 5,
   "struggleConsecutive": 2,
   "toolFailureThreshold": 3,
