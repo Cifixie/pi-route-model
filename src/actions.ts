@@ -21,9 +21,10 @@ export async function promptToSwitchTurn(
 			`🔧 route-model: detected struggle (${turnState.turnIndex} turns) — switching to cloud`,
 			"info",
 		);
-		// Mark this as a struggle-driven switch so before_agent_start can restore.
-		taskState.setCloudSwitchWasFromStruggle(true);
-		pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
+		// Call the switch directly (rather than round-tripping through the
+		// /route-model command text) and mark it struggle-driven so
+		// doToggleModel only records the flag if the switch actually succeeds.
+		await doToggleModel(pi, ctx, cfg, taskState, true);
 		return;
 	}
 
@@ -32,8 +33,7 @@ export async function promptToSwitchTurn(
 
 	if (choice) {
 		// User confirmed the struggle-driven switch.
-		taskState.setCloudSwitchWasFromStruggle(true);
-		pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
+		await doToggleModel(pi, ctx, cfg, taskState, true);
 	} else {
 		ctx.ui.notify(
 			"route-model: will keep monitoring. Run '/route-model switch' anytime.",
@@ -80,7 +80,7 @@ export async function switchToLocal(
 		cfg?.cloudProvider,
 	);
 	if (!localModel) {
-		ctx.ui.notify(
+		ctx.ui?.notify(
 			"route-model: no local model found. Add one via /model first.",
 			"error",
 		);
@@ -88,25 +88,34 @@ export async function switchToLocal(
 	}
 	const success = await pi.setModel(localModel);
 	if (!success) {
-		ctx.ui.notify("route-model: failed to switch to local model.", "error");
+		ctx.ui?.notify("route-model: failed to switch to local model.", "error");
 		return;
 	}
 	// Clear the struggle flag: we're back on local after a detour.
 	taskState.setCloudSwitchWasFromStruggle(false);
 	taskState.resetTask();
-	ctx.ui.notify(
+	ctx.ui?.notify(
 		`✅ route-model: switched back to local (${localModel.name || localModel.id})`,
 		"info",
 	);
-	ctx.ui.setStatus("route-model", "Now on local");
+	ctx.ui?.setStatus("route-model", "Now on local");
 }
 
-/** Toggle between local and cloud, used by `/route-model switch`. */
+/**
+ * Toggle between local and cloud, used by `/route-model switch`.
+ *
+ * `fromStruggle` records why a local→cloud switch happened, but only once
+ * the switch actually succeeds — a failed switch (no cloud model, no API
+ * key) must NOT leave `cloudSwitchWasFromStruggle` set, otherwise a later,
+ * unrelated manual switch to cloud would inherit a stale "struggle-driven"
+ * attribution and get wrongly offered a restore-to-local prompt.
+ */
 export async function doToggleModel(
 	pi: ExtensionAPI,
 	ctx: any,
 	cfg: Config,
 	taskState: TaskState,
+	fromStruggle = false,
 ): Promise<void> {
 	const cloudProvider = resolveCloudProvider(cfg);
 	const isCurrentlyLocal = isLocalModel(ctx.model, cloudProvider);
@@ -122,7 +131,7 @@ export async function doToggleModel(
 		cfg.cloudModelId,
 	);
 	if (!cloudModel) {
-		ctx.ui.notify(
+		ctx.ui?.notify(
 			`route-model: no ${cloudProvider} model found. Add one via /model first.`,
 			"error",
 		);
@@ -130,12 +139,14 @@ export async function doToggleModel(
 	}
 	const success = await pi.setModel(cloudModel);
 	if (!success) {
-		ctx.ui.notify(
+		ctx.ui?.notify(
 			`route-model: no API key for the ${cloudProvider} model. Check your config.`,
 			"error",
 		);
 		return;
 	}
-	ctx.ui.notify("✅ route-model: switched to cloud", "info");
-	ctx.ui.setStatus("route-model", "Now on cloud");
+	// Only recorded now that the switch has actually succeeded.
+	taskState.setCloudSwitchWasFromStruggle(fromStruggle);
+	ctx.ui?.notify("✅ route-model: switched to cloud", "info");
+	ctx.ui?.setStatus("route-model", "Now on cloud");
 }

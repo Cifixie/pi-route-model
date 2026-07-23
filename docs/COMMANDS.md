@@ -120,7 +120,29 @@ You: please switch to cloud
 ```
 
 **Works when**: You're on local model
-**Result**: Immediately switches to cloud, sets flag to false (user-initiated)
+**Result**: Immediately switches to cloud, flag stays `false` (user-initiated)
+
+And back the other way — trigger a switch to local without typing the command:
+
+```
+You: switch to local
+→ Internally: /route-model switch
+
+You: use local
+→ Internally: /route-model switch
+
+You: local please
+→ Internally: /route-model switch
+
+You: use the local model
+→ Internally: /route-model switch
+
+You: please switch to local
+→ Internally: /route-model switch
+```
+
+**Works when**: You're on cloud
+**Result**: Immediately switches to local, clears the flag
 
 ### Struggle Status Queries
 

@@ -1,13 +1,21 @@
-import { DEFAULT_CLOUD_PROVIDER } from "./constants";
+import { DEFAULT_CLOUD_PROVIDER, KNOWN_LOCAL_PROVIDERS } from "./constants";
 import type { Model } from "./types";
 
-/** True if `model` is NOT from the configured cloud provider. */
+/**
+ * True if `model` is NOT from the configured cloud provider.
+ *
+ * Uses an exact (case-insensitive) provider match rather than a substring
+ * match: a substring match would misclassify self-hosted OpenAI-compatible
+ * local servers (a provider name containing "openai") as cloud whenever
+ * `cloudProvider` is set to "openai", and more generally is surprising for
+ * any provider name that happens to contain another provider's name.
+ */
 export function isLocalModel(
 	model: Model | undefined,
 	cloudProvider: string,
 ): boolean {
 	if (!model) return false;
-	return !model.provider.toLowerCase().includes(cloudProvider.toLowerCase());
+	return model.provider.toLowerCase() !== cloudProvider.toLowerCase();
 }
 
 /**
@@ -26,9 +34,7 @@ export function findCloudModel(
 	// Fall back to first available model from cloud provider.
 	return modelRegistry
 		.getAll()
-		.find(
-			(m: any) => m.provider.toLowerCase() === cloudProvider.toLowerCase(),
-		);
+		.find((m: any) => m.provider.toLowerCase() === cloudProvider.toLowerCase());
 }
 
 /**
@@ -48,17 +54,19 @@ export function findLocalModel(
 		}
 	}
 
-	// Fallback: search by known local providers.
-	const localProviders = ["omlx", "ollama", "lmstudio", "openai"];
-	for (const provider of localProviders) {
+	// Fallback: search by known local providers, excluding whichever one is
+	// configured as the cloud provider (in case of an unusual setup where a
+	// normally-local-sounding provider name is being used as the cloud one).
+	const cloudProv = (cloudProvider || DEFAULT_CLOUD_PROVIDER).toLowerCase();
+	for (const provider of KNOWN_LOCAL_PROVIDERS) {
+		if (provider === cloudProv) continue;
 		const models = modelRegistry
 			.getAll()
-			.filter((m: any) => m.provider === provider);
+			.filter((m: any) => m.provider.toLowerCase() === provider);
 		if (models.length > 0) return models[0];
 	}
 
 	// Final fallback: any non-cloud-provider model.
-	const cloudProv = (cloudProvider || DEFAULT_CLOUD_PROVIDER).toLowerCase();
 	return modelRegistry
 		.getAll()
 		.find((m: any) => m.provider.toLowerCase() !== cloudProv);

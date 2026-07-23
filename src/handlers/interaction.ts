@@ -1,5 +1,9 @@
 import { doToggleModel } from "../actions";
-import { resolveCloudProvider, type ConfigResolver } from "../config";
+import {
+	persistConfig,
+	resolveCloudProvider,
+	type ConfigResolver,
+} from "../config";
 import { DEFAULT_TOOL_FAILURE_THRESHOLD } from "../constants";
 import { isLocalModel } from "../model-utils";
 import type { TaskState } from "../task-state";
@@ -34,7 +38,7 @@ function registerStatusCommand(
 		handler: async (args: any, ctx: any) => {
 			const cfg = configResolver.resolve();
 			if (!cfg) {
-				ctx.ui.notify(
+				ctx.ui?.notify(
 					"route-model: config.json missing — copy config/config.example.json to config/config.json.",
 					"warning",
 				);
@@ -58,17 +62,20 @@ function registerStatusCommand(
 
 function toggleAutoMode(cfg: Config, ctx: any): void {
 	cfg.autoMode = !cfg.autoMode;
-	ctx.ui.notify(
+	// Persist so the toggle survives past this session instead of quietly
+	// reverting to the file's old value on the next restart.
+	persistConfig(cfg);
+	ctx.ui?.notify(
 		`🔧 route-model: auto-switch ${cfg.autoMode ? "ON — will switch automatically" : "OFF — will ask before switching"}`,
 		"info",
 	);
-	ctx.ui.setStatus("route-model", cfg.autoMode ? "auto ON" : "auto OFF");
+	ctx.ui?.setStatus("route-model", cfg.autoMode ? "auto ON" : "auto OFF");
 }
 
 function showStatus(ctx: any, cfg: Config, taskState: TaskState): void {
 	const cloudProvider = resolveCloudProvider(cfg);
 	const active = isLocalModel(ctx.model, cloudProvider);
-	ctx.ui.notify(
+	ctx.ui?.notify(
 		[
 			"🔧 route-model status",
 			"",
@@ -98,19 +105,28 @@ function registerNaturalLanguageInput(
 ): void {
 	pi.on("input", async (event: any, ctx: any) => {
 		const cfg = configResolver.resolve();
-		const cloudProvider = resolveCloudProvider(cfg);
-		if (!isLocalModel(ctx.model, cloudProvider)) return { action: "continue" };
 		if (!cfg) return { action: "continue" };
+		const cloudProvider = resolveCloudProvider(cfg);
+		const currentlyLocal = isLocalModel(ctx.model, cloudProvider);
 
 		const lower = event.text.toLowerCase().trim();
 
-		if (isSwitchPhrase(lower)) {
+		// Only intercept a switch phrase in the direction that's actually
+		// possible right now: "switch to cloud" while on local, "switch to
+		// local" while on cloud. Previously only the cloud-direction phrases
+		// were recognized at all, so there was no natural-language way back.
+		if (currentlyLocal && isSwitchToCloudPhrase(lower)) {
+			pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
+			return { action: "handled" };
+		}
+		if (!currentlyLocal && isSwitchToLocalPhrase(lower)) {
 			pi.sendUserMessage("/route-model switch", { deliverAs: "followUp" });
 			return { action: "handled" };
 		}
 
-		if (isStruggleQuery(lower)) {
-			ctx.ui.notify(
+		// Struggle status is only meaningful while monitoring (i.e. on local).
+		if (currentlyLocal && isStruggleQuery(lower)) {
+			ctx.ui?.notify(
 				`route-model assessment: ${describeStruggleStatus(taskState)}`,
 				"info",
 			);
@@ -121,7 +137,7 @@ function registerNaturalLanguageInput(
 	});
 }
 
-function isSwitchPhrase(lower: string): boolean {
+function isSwitchToCloudPhrase(lower: string): boolean {
 	return (
 		lower === "switch to cloud" ||
 		lower === "use cloud" ||
@@ -131,12 +147,20 @@ function isSwitchPhrase(lower: string): boolean {
 	);
 }
 
+function isSwitchToLocalPhrase(lower: string): boolean {
+	return (
+		lower === "switch to local" ||
+		lower === "use local" ||
+		lower === "local please" ||
+		lower === "use the local model" ||
+		lower.startsWith("please switch to local")
+	);
+}
+
 function isStruggleQuery(lower: string): boolean {
 	return (
 		/(?:are|do you|is it|is the|seem)/i.test(lower) &&
-		/(?:struggling|stuck|having trouble|can't handle|out of depth)/i.test(
-			lower,
-		)
+		/(?:struggling|stuck|having trouble|can't handle|out of depth)/i.test(lower)
 	);
 }
 

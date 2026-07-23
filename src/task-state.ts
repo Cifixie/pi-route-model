@@ -1,5 +1,3 @@
-import type { Message } from "./types";
-
 /**
  * Mutable state for the extension. Most fields are scoped to the CURRENT
  * task and reset on every new user prompt (see resetTask()) — turn/struggle
@@ -16,7 +14,6 @@ export class TaskState {
 	consecutiveToolFailures = 0;
 	lastFailureTag = "";
 	hasAlerted = false;
-	strugglingTurns: Message[] = [];
 	cloudSwitchWasFromStruggle = false;
 
 	/** Reset everything scoped to the current task. */
@@ -26,7 +23,6 @@ export class TaskState {
 		this.consecutiveToolFailures = 0;
 		this.lastFailureTag = "";
 		this.hasAlerted = false;
-		this.strugglingTurns = [];
 	}
 
 	incrementTurn(): void {
@@ -53,9 +49,8 @@ export class TaskState {
 	 * Record whether the latest assistant turn showed struggle phrases.
 	 * Returns whether this turn was struggling (used to build a TurnState).
 	 */
-	recordStruggle(reasons: string[], message?: Message): boolean {
+	recordStruggle(reasons: string[]): boolean {
 		const isStruggling = reasons.length > 0;
-		if (isStruggling && message) this.strugglingTurns.push(message);
 		this.consecutiveStruggling = isStruggling
 			? this.consecutiveStruggling + 1
 			: 0;

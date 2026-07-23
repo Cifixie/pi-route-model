@@ -73,7 +73,7 @@ tool_execution_end event:
 
 ```typescript
 if (turnIndex >= cfg.turnThreshold && 
-    (consecutiveStruggling >= 1 || 
+    (consecutiveStruggling >= (cfg.struggleConsecutive ?? 2) || 
      consecutiveToolFailures >= threshold ||
      turnIndex >= cfg.turnThreshold * 2)) {
   // Alert triggered
@@ -94,12 +94,14 @@ Alert triggers when:
 ```
 (turnIndex >= turnThreshold)
   AND
-(consecutiveStruggling >= 1
+(consecutiveStruggling >= struggleConsecutive   // default 2
   OR consecutiveToolFailures >= toolFailureThreshold
   OR turnIndex >= turnThreshold * 2)
   AND
 !hasAlerted (only once per task)
 ```
+
+`struggleConsecutive` (default `2`) only gates the struggle-*phrase* branch — it has no effect on the tool-failure or double-threshold branches.
 
 **Key**: NOT OR-ed together. Turn threshold is **gating condition**. You can't trigger on struggle alone; you need to hit the turn threshold first.
 
@@ -111,16 +113,15 @@ Alert triggers when:
 turn_end event:
   → detectStruggle() → struggle phrases found
   → consecutiveStruggling incremented
-  → shouldAlert condition → TRUE
+  → shouldAlert condition → TRUE (consecutiveStruggling >= struggleConsecutive)
 
-promptToSwitchTurn(ctx, cfg, turnState):
+promptToSwitchTurn(ctx, cfg, turnState, taskState):
   if (cfg.autoMode) {
     notify "route-model: detected struggle (N turns) — switching to cloud"
-    cloudSwitchWasFromStruggle = true  ← CRITICAL
-    sendUserMessage("/route-model switch")
+    doToggleModel(pi, ctx, cfg, taskState, fromStruggle: true)
 ```
 
-The flag `cloudSwitchWasFromStruggle = true` is **critical**. It tells `before_agent_start` that the cloud switch came from escalation, not user intent.
+`doToggleModel` is called **directly** here (not via `sendUserMessage("/route-model switch")`) and only sets `cloudSwitchWasFromStruggle = true` **after** `pi.setModel()` actually succeeds. This is critical: if the switch fails (no cloud model, no API key), the flag is never set, so a later, unrelated manual switch to cloud isn't wrongly attributed to this failed escalation attempt.
 
 ### Scenario: Manual-Mode
 
@@ -131,27 +132,25 @@ promptToSwitchTurn():
     choice = confirm(message)
     
     if (choice) {
-      cloudSwitchWasFromStruggle = true  ← CRITICAL
-      sendUserMessage("/route-model switch")
+      doToggleModel(pi, ctx, cfg, taskState, fromStruggle: true)
     } else {
       notify "keeping monitoring, run /route-model switch anytime"
 ```
 
-User approval is required, but the same flag is set.
+User approval is required, but the same success-gated flag logic applies.
 
 ### The Switch Itself
 
 ```
-sendUserMessage("/route-model switch")
-  → doToggleModel() is called
-  
-doToggleModel():
+doToggleModel(pi, ctx, cfg, taskState, fromStruggle):
   isCurrentlyLocal = isLocalModel(ctx.model)  // true
   cloudModel = findCloudModel(...)
-  pi.setModel(cloudModel)
+  success = pi.setModel(cloudModel)
+  if (!success) return  // flag untouched, stays on local
+  cloudSwitchWasFromStruggle = fromStruggle  // set only now
   
   → model_select event fires
-  → handler: resetTaskState()
+  → handler: resetTaskState()  (does not touch the flag)
   → notify "switched to cloud — monitoring off"
 ```
 
@@ -231,10 +230,10 @@ The flag is cleared here, so if we get another escalation later, it starts fresh
 
 ```
 User: "/route-model switch"
-→ doToggleModel() → pi.setModel(cloudModel)
+→ doToggleModel(fromStruggle: false, the default) → pi.setModel(cloudModel)
+→ on success, cloudSwitchWasFromStruggle is explicitly set to false
 → model_select fires with (wasCloud: false, isCloud: true)
-→ handler resets task state
-→ cloudSwitchWasFromStruggle stays FALSE (never touched)
+→ handler resets task state (doesn't touch the flag)
 
 Next task:
 → before_agent_start sees (cloud, flag=false)
@@ -323,6 +322,7 @@ Task 2: User sends prompt
 
 - `autoMode` controls whether restoration offer is automatic or manual
 - `turnThreshold` gates the struggle signals
+- `struggleConsecutive` gates the struggle-phrase branch specifically (default 2 consecutive turns)
 - `toolFailureThreshold` defines tool failure sensitivity
 - `strugglePatterns` determines what counts as struggle
 

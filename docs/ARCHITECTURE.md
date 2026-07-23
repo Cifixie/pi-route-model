@@ -39,6 +39,7 @@ The extension looks for struggle at three levels, **scoped to the current task**
 - Looks for phrases like: "I'm not sure", "let me try again", "it might be", "I cannot determine", etc.
 - Case-insensitive substring match against 13 patterns in config
 - Each matched phrase is recorded
+- Requires `struggleConsecutive` (default 2) consecutive struggling turns before this signal gates the alert (the tool-failure and double-turn-threshold signals are ungated)
 
 ### 3. Tool Failure Streak
 
@@ -49,7 +50,7 @@ The extension looks for struggle at three levels, **scoped to the current task**
 
 **Alert triggers when**: `turnIndex >= turnThreshold` **AND** at least one of:
 
-- `consecutiveStruggling >= 1` (any recent struggle phrase)
+- `consecutiveStruggling >= struggleConsecutive` (default 2 consecutive struggle-phrase turns)
 - `consecutiveToolFailures >= threshold` (consecutive tool failures)
 - `turnIndex >= turnThreshold * 2` (double the threshold, give up)
 
@@ -62,8 +63,9 @@ The extension looks for struggle at three levels, **scoped to the current task**
 **Local → Cloud (Struggle Escalation)**
 
 1. `promptToSwitchTurn()` detects struggle signals exceed threshold
-2. In auto-mode: immediately sets `cloudSwitchWasFromStruggle = true` and sends `/route-model switch`
-3. In manual-mode: shows user a dialog; if confirmed, sets flag and sends command
+2. In auto-mode: calls `doToggleModel(..., fromStruggle: true)` directly
+3. In manual-mode: shows user a dialog; if confirmed, calls `doToggleModel(..., fromStruggle: true)`
+4. `doToggleModel` only sets `cloudSwitchWasFromStruggle = true` **after** the switch actually succeeds — a failed switch (no cloud model / no API key) leaves the flag untouched, so a later unrelated manual switch to cloud isn't misattributed as struggle-driven
 
 **Cloud → Local (Restoration)**
 
@@ -75,9 +77,9 @@ The extension looks for struggle at three levels, **scoped to the current task**
 **Manual Cloud Switch (User Intent)**
 
 1. User runs `/route-model switch` while on local
-2. `doToggleModel()` calls `pi.setModel(cloudModel)`
-3. `model_select` event fires with `wasCloud = false, isCloud = true`
-4. Handler resets task state but **does NOT set the flag**
+2. `doToggleModel(..., fromStruggle: false)` (the default) calls `pi.setModel(cloudModel)`
+3. On success, `cloudSwitchWasFromStruggle` is explicitly set to `false` (the passed-in value) — not left untouched
+4. `model_select` event fires with `wasCloud = false, isCloud = true`; the handler only resets per-task counters, it doesn't touch the flag
 5. `before_agent_start` sees cloud model with `cloudSwitchWasFromStruggle == false`
 6. Handler returns early: **stays on cloud, no switch offered**
 
@@ -105,7 +107,7 @@ The extension looks for struggle at three levels, **scoped to the current task**
 
 ### Natural Language Input (when on local)
 
-- `input` → intercept phrases like "switch to cloud", "are you struggling?"
+- `input` → intercept phrases like "switch to cloud"/"use cloud" (while on local) and "switch to local"/"use local" (while on cloud), plus "are you struggling?" (while on local)
 - Can convert natural language to `/route-model` commands
 
 ### Task Boundary
@@ -142,7 +144,7 @@ Config is loaded from `config/config.json` relative to the source file:
 - `cloudModelId` — preferred cloud model ID (required)
 - `localModelIds` — preferred local models in fallback order (optional, defaults to first available)
 - `turnThreshold` — triggers alert at N turns (default 5)
-- `struggleConsecutive` — unused (kept for future refinement)
+- `struggleConsecutive` — minimum consecutive struggling turns before the struggle-phrase signal gates the alert (default 2)
 - `toolFailureThreshold` — triggers alert at N consecutive failures (default 3)
 - `autoMode` — auto-switch vs ask user
 - `strugglePatterns` — array of phrase patterns to detect

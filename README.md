@@ -35,7 +35,7 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 | `cloudModelId` | `claude-sonnet-4-5` | Cloud model to switch to. Falls back to the first available model from `cloudProvider` if not found. |
 | `localModelIds` | _(none)_ | Preferred local model IDs, tried in order. Falls back to the first available non-cloud-provider model if unset/unmatched. |
 | `turnThreshold` | `5` | Turns before the alert can fire for a task. |
-| `struggleConsecutive` | `2` | Consecutive struggling turns required (currently informational). |
+| `struggleConsecutive` | `2` | Consecutive struggling turns required before the struggle-phrase signal counts toward the alert. |
 | `toolFailureThreshold` | `3` | Same tool failing consecutively before alert triggers. |
 | `autoMode` | `true` | `true` = switch automatically (both ways). `false` = show a confirm prompt before each switch. |
 | `strugglePatterns` | (see example) | Lowercase phrases to watch for in assistant responses. |
@@ -46,14 +46,16 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 | --------- | ------------- |
 | `/route-model` | Show current status (model, turns, struggles) |
 | `/route-model switch` | Toggle between local and cloud |
-| `switch to cloud` / `use cloud` | Same as above, typed as a message |
-| `are you struggling?` | Get a real-time assessment |
+| `/route-model auto` | Toggle `autoMode` on/off — persisted to `config/config.json` |
+| `switch to cloud` / `use cloud` | Same as above, typed as a message (while on local) |
+| `switch to local` / `use local` | Switch back to local, typed as a message (while on cloud) |
+| `are you struggling?` | Get a real-time assessment (while on local) |
 
 ## Alert triggers
 
 - Agent has made ≥ `turnThreshold` turns on **this task**, AND
 - At least one of:
-  - 1+ struggle phrase detected in the latest assistant message
+  - ≥ `struggleConsecutive` (default 2) consecutive turns with a struggle phrase
   - ≥ `toolFailureThreshold` (default 3) consecutive tool failures from the same tool
   - ≥ 2× `turnThreshold` turns regardless of signals (catches long silent struggles)
 
@@ -84,3 +86,4 @@ pi-route-model/
 ## Known limitations
 
 - Struggle detection is now multi-signal (phrases + tool failures), reducing blind spots but still missing edge cases such as tools that silently fail without raising `isError`.
+- Local/cloud classification is an exact (case-insensitive) match on `model.provider` against `cloudProvider` — make sure `cloudProvider` matches your provider name exactly (e.g. `"anthropic"`, not `"Anthropic API"`).

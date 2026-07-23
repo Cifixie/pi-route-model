@@ -66,7 +66,7 @@ Preferred local models to use when monitoring is active or after restoration fro
 
 - route-model tries each model ID in order
 - Uses the first one available in your Pi model registry
-- If none are available, falls back to searching by provider (Ollama, LM Studio, OMLX, OpenAI)
+- If none are available, falls back to searching by known local-provider names (Ollama, LM Studio, OMLX) — excluding whichever one is currently your configured `cloudProvider`
 - Finally, uses any model that isn't from `cloudProvider` as a last resort
 
 **Use case**:
@@ -127,11 +127,18 @@ Controls whether escalation happens automatically or with user confirmation.
 - Set to `true` if you trust the heuristics and want hands-off operation
 - Set to `false` if you prefer control and want to review alerts before escalating
 
-### `struggleConsecutive` (number, optional, unused)
+**Note**: toggling this at runtime via `/route-model auto` writes the change back to `config/config.json` immediately — it's not lost on the next restart.
 
-Currently unused. Reserved for future refinement of consecutive-struggle detection logic.
+### `struggleConsecutive` (number, optional)
+
+Minimum number of consecutive struggling turns required before the struggle-phrase signal counts toward the alert. Set to `1` to alert on the very first struggle phrase.
 
 **Default**: `2`
+
+**Notes**:
+
+- Only gates the struggle-*phrase* signal — tool-failure streaks and the double-turn-threshold backstop are unaffected
+- Falls back to the default if omitted or not a number
 
 ### `strugglePatterns` (string[], required)
 
@@ -200,10 +207,12 @@ If no local model is configured, route-model will show a warning at startup but 
 
 route-model works with any providers registered in Pi:
 
-- **Local providers**: anything that is NOT the configured `cloudProvider` — Ollama, LM Studio, OMLX, OpenAI, etc.
+- **Local providers**: anything that is NOT the configured `cloudProvider` — Ollama, LM Studio, OMLX, a self-hosted OpenAI-compatible server, etc.
 - **Cloud provider**: whatever you set `cloudProvider` to (default: Anthropic / Claude models)
 
-The extension determines local vs. cloud by comparing `model.provider` against the configured `cloudProvider` (case-insensitive substring match). See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+**Note**: the `findLocalModel()` fallback-by-provider-name search only tries `ollama`, `lmstudio`, and `omlx` by name (excluding your `cloudProvider` if it happens to collide). It intentionally does **not** treat `"openai"` as inherently local, since `openai` is just as often a *cloud* provider — if your only local setup is an OpenAI-compatible server, pin it explicitly via `localModelIds` instead of relying on the fallback.
+
+The extension determines local vs. cloud by comparing `model.provider` against the configured `cloudProvider` (case-insensitive **exact** match — not a substring match, so a local OpenAI-compatible server won't be misclassified as cloud just because its provider name contains "openai"). See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## Troubleshooting
 

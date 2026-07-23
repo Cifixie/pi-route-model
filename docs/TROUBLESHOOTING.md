@@ -369,14 +369,13 @@ Turns this task: 2
 - Settings don't change
 - Still using old thresholds
 
-**Cause**: Config is cached in memory, not reloaded
+**Cause**: Config is cached in memory for the whole session and is only re-read from disk on `session_start`.
 
-**Fix**: Reload the extension:
+**Fix**: Restart Pi or start a new session — there is no in-session way to force a reload from disk. (Note: toggling `autoMode` via `/route-model auto` is the one exception — that specific change is applied immediately and also persisted back to `config.json`.)
 
 ```bash
-# Restart Pi completely, or
-# Switch models to trigger a reload:
-/route-model switch  # This reloads config on next check
+# Restart Pi completely to pick up manual config.json edits:
+<restart pi>
 ```
 
 **Verify**:

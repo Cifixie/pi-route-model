@@ -1,6 +1,9 @@
 import { promptToSwitchTurn, switchToLocal } from "../actions";
 import { resolveCloudProvider, type ConfigResolver } from "../config";
-import { DEFAULT_TOOL_FAILURE_THRESHOLD } from "../constants";
+import {
+	DEFAULT_STRUGGLE_CONSECUTIVE,
+	DEFAULT_TOOL_FAILURE_THRESHOLD,
+} from "../constants";
 import { isLocalModel } from "../model-utils";
 import { detectStruggle, failureTag } from "../struggle-detection";
 import type { TaskState } from "../task-state";
@@ -34,13 +37,13 @@ function registerSessionStart(
 		const cfg = configResolver.resolve();
 		const cloudProvider = resolveCloudProvider(cfg);
 		if (!cfg) {
-			ctx.ui.notify(
+			ctx.ui?.notify(
 				"route-model: config.json missing — copy config/config.example.json to config/config.json.",
 				"warning",
 			);
 			return;
 		}
-		ctx.ui.notify(
+		ctx.ui?.notify(
 			isLocalModel(ctx.model, cloudProvider)
 				? "🔧 route-model: watching local model performance"
 				: "☁️ route-model: using cloud model — monitoring off",
@@ -66,17 +69,18 @@ function registerModelTracking(
 		const isCloud = !isLocalModel(event.model, cloudProvider);
 
 		if (isCloud && !wasCloud) {
-			// Switched to cloud (struggle-detected or manual). The flag is
-			// already set by promptToSwitchTurn if this was struggle-driven;
-			// manual switches leave it untouched (stays false).
+			// Switched to cloud (struggle-detected or manual). doToggleModel
+			// already recorded cloudSwitchWasFromStruggle for this switch (and
+			// only if it actually succeeded) before this event fires — this
+			// handler only needs to reset the per-task counters.
 			taskState.resetTask();
-			ctx.ui.notify("✅ route-model: on cloud — monitoring off", "info");
+			ctx.ui?.notify("✅ route-model: on cloud — monitoring off", "info");
 		} else if (isLocalModel(event.model, cloudProvider) && wasCloud) {
 			// User switched back to local — resume monitoring. Clear the flag:
 			// this was a manual switch, so future cloud usage is user-intent.
 			taskState.setCloudSwitchWasFromStruggle(false);
 			taskState.resetTask();
-			ctx.ui.notify(
+			ctx.ui?.notify(
 				"⚠️ route-model: back on local — monitoring for struggle",
 				"info",
 			);
@@ -134,6 +138,9 @@ async function offerRestoreToLocal(
 		await switchToLocal(pi, ctx, cfg, taskState);
 		return;
 	}
+	// Manual mode needs a confirm dialog — without a UI we can't ask, so
+	// leave the user on cloud rather than silently switching them back.
+	if (!ctx.hasUI) return;
 	const ok = await ctx.ui.confirm(
 		"route-model",
 		"New task starting — switch back to local model?",
@@ -172,19 +179,14 @@ function evaluateTurn(ctx: any, cfg: Config, taskState: TaskState): TurnState {
 	const allEntries = ctx.sessionManager.getBranch();
 	const latestAssistant = [...allEntries]
 		.reverse()
-		.find(
-			(e: any) => e.type === "message" && e.message?.role === "assistant",
-		);
+		.find((e: any) => e.type === "message" && e.message?.role === "assistant");
 
 	let struggleReasons: string[] = [];
 	if (latestAssistant?.type === "message" && latestAssistant.message) {
 		struggleReasons = detectStruggle(latestAssistant.message, cfg);
 	}
 
-	const isStruggling = taskState.recordStruggle(
-		struggleReasons,
-		latestAssistant?.message,
-	);
+	const isStruggling = taskState.recordStruggle(struggleReasons);
 
 	return {
 		turnIndex: taskState.turnIndex,
@@ -197,10 +199,11 @@ function evaluateTurn(ctx: any, cfg: Config, taskState: TaskState): TurnState {
 function shouldAlertForTurn(cfg: Config, taskState: TaskState): boolean {
 	const toolFailureCount =
 		cfg.toolFailureThreshold ?? DEFAULT_TOOL_FAILURE_THRESHOLD;
+	const struggleCount = cfg.struggleConsecutive ?? DEFAULT_STRUGGLE_CONSECUTIVE;
 
 	return (
 		taskState.turnIndex >= cfg.turnThreshold &&
-		(taskState.consecutiveStruggling >= 1 ||
+		(taskState.consecutiveStruggling >= struggleCount ||
 			taskState.consecutiveToolFailures >= toolFailureCount ||
 			taskState.turnIndex >= cfg.turnThreshold * 2)
 	);
