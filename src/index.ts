@@ -49,6 +49,7 @@ import { fileURLToPath } from "node:url";
 
 interface Config {
 	cloudModelId: string;
+	localModelIds?: string[]; // Preferred local models in order; falls back to first available
 	turnThreshold: number;
 	struggleConsecutive: number;
 	toolFailureThreshold: number;
@@ -138,7 +139,19 @@ function findCloudModel(
 	return modelRegistry.getAll().find((m: any) => m.provider === "anthropic");
 }
 
-function findLocalModel(modelRegistry: any): Model | undefined {
+function findLocalModel(
+	modelRegistry: any,
+	preferredIds?: string[],
+): Model | undefined {
+	// First, try preferred IDs from config
+	if (preferredIds && preferredIds.length > 0) {
+		for (const id of preferredIds) {
+			const m = modelRegistry.getAll().find((model: any) => model.id === id);
+			if (m) return m;
+		}
+	}
+
+	// Fallback: search by provider
 	const localProviders = ["omlx", "ollama", "lmstudio", "openai"];
 	for (const provider of localProviders) {
 		const models = modelRegistry
@@ -146,6 +159,8 @@ function findLocalModel(modelRegistry: any): Model | undefined {
 			.filter((m: any) => m.provider === provider);
 		if (models.length > 0) return models[0];
 	}
+
+	// Final fallback: any non-Anthropic model
 	return modelRegistry.getAll().find((m: any) => m.provider !== "anthropic");
 }
 
@@ -498,7 +513,11 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	async function switchToLocal(ctx: any) {
-		const localModel = findLocalModel(ctx.modelRegistry);
+		const cfg = resolveConfig();
+		const localModel = findLocalModel(
+			ctx.modelRegistry,
+			cfg?.localModelIds,
+		);
 		if (!localModel) {
 			ctx.ui.notify(
 				"route-model: no local model found. Add one via /model first.",

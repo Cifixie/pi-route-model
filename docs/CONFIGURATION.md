@@ -31,6 +31,47 @@ The preferred cloud model to escalate to when local model struggles.
   5. First available Anthropic model
 - Requires valid Anthropic API key in Pi configuration
 
+### `localModelIds` (string[], optional)
+
+Preferred local models to use when monitoring is active or after restoration from cloud.
+
+**Default**: `undefined` (uses first available local model)
+
+**Example**:
+
+```json
+"localModelIds": [
+  "ollama/mistral",
+  "ollama/llama2",
+  "lmstudio/my-model"
+]
+```
+
+**Behavior**:
+
+- route-model tries each model ID in order
+- Uses the first one available in your Pi model registry
+- If none are available, falls back to searching by provider (Ollama, LM Studio, OMLX, OpenAI)
+- Finally, uses any non-Anthropic model as a last resort
+
+**Use case**:
+
+- You have multiple local models and want a specific one preferred
+- You want fallback models if your primary is offline
+- You want deterministic model selection instead of "first available"
+
+**How to find your model IDs**:
+
+```bash
+/model list  # Shows registered models and their IDs
+```
+
+**Notes**:
+
+- IDs are usually in format `provider/model-name` (e.g., `ollama/mistral`)
+- Empty array `[]` is treated as undefined (uses defaults)
+- Order matters: earlier models are tried first
+
 ### `turnThreshold` (number, required)
 
 Number of turns before the extension considers triggering an alert.

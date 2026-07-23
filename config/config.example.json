@@ -1,5 +1,10 @@
 {
   "cloudModelId": "claude-sonnet-4-5",
+  "localModelIds": [
+    "ollama/mistral",
+    "ollama/llama2",
+    "lmstudio/model"
+  ],
   "turnThreshold": 5,
   "struggleConsecutive": 2,
   "toolFailureThreshold": 3,

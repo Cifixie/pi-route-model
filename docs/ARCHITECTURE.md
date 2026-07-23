@@ -138,7 +138,8 @@ The extension looks for struggle at three levels, **scoped to the current task**
 
 Config is loaded from `config/config.json` relative to the source file:
 
-- `cloudModelId` — preferred cloud model ID
+- `cloudModelId` — preferred cloud model ID (required)
+- `localModelIds` — preferred local models in fallback order (optional, defaults to first available)
 - `turnThreshold` — triggers alert at N turns (default 5)
 - `struggleConsecutive` — unused (kept for future refinement)
 - `toolFailureThreshold` — triggers alert at N consecutive failures (default 3)
