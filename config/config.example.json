@@ -2,6 +2,7 @@
   "claudeModelId": "claude-sonnet-4-5",
   "turnThreshold": 5,
   "struggleConsecutive": 2,
+  "toolFailureThreshold": 3,
   "autoMode": true,
   "strugglePatterns": [
     "i'm not sure",

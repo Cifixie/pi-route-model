@@ -4,13 +4,17 @@
  * Watches the local model struggle and nudges you toward Claude when
  * a task clearly outgrows what the model on your machine can handle.
  *
- * Strategy: two simple signals, both observable at runtime — scoped to
+ * Strategy: three simple signals, all observable at runtime — scoped to
  * the CURRENT task (reset on every new user prompt, not cumulative for
  * the whole session):
  *
  * 1. **Turn count** — how many turns the agent burns on this task.
  * 2. **Struggle phrases** — the assistant saying "I'm not sure",
  *    "let me try again", "it might be", etc.
+ * 3. **Tool failure streak** — the same tool failing 2+ consecutive times
+ *    (restarts when any tool succeeds). Catches struggle the model never
+ *    verbalises: an edit tool that keeps failing, a grep that returns
+ *    nothing repeatedly, etc.
  *
  * When the current task exceeds your configured turn threshold AND
  * shows at least one struggle signal, you get a prompt to switch to
@@ -47,6 +51,7 @@ interface Config {
 	claudeModelId: string;
 	turnThreshold: number;
 	struggleConsecutive: number;
+	toolFailureThreshold: number;
 	autoMode: boolean;
 	strugglePatterns: string[];
 }
@@ -55,11 +60,21 @@ interface TurnState {
 	turnIndex: number;
 	isStruggling: boolean;
 	struggleReasons: string[];
+	toolFailures: number;
 }
 
 // Config lives in ../config/config.json relative to this source file.
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(EXTENSION_DIR, "../config/config.json");
+const DEFAULT_TOOL_FAILURE_THRESHOLD = 3;
+
+/** Derive a "failure tag" from a tool result event: which specific thing
+ *  failed, so the same failing tool increments the streak. */
+function failureTag(event: any): string {
+	if (event?.toolName) return `tool:${event.toolName}`;
+	if (event?.toolCallId) return `call:${event.toolCallId}`;
+	return "unknown";
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -141,8 +156,15 @@ export default function (pi: ExtensionAPI) {
 	// Per-task tracking (reset on every new user prompt, see resetTaskState)
 	let turnIndex = 0;
 	let consecutiveStruggling = 0;
+	let consecutiveToolFailures = 0;
+	let lastFailureTag = "";
 	let hasAlerted = false;
 	let strugglingTurns: Message[] = [];
+	// Track whether the previous model (before the current task) was Claude.
+	// When a user manually switches to Claude, this stays true so the
+	// task-boundary handler knows to stay put until the user explicitly
+	// switches back. Resets on every new task.
+	let prevModelWasClaude = false;
 
 	function resolveConfig(): Config | undefined {
 		if (configLoadFailed) return undefined;
@@ -166,6 +188,8 @@ export default function (pi: ExtensionAPI) {
 	function resetTaskState(): void {
 		turnIndex = 0;
 		consecutiveStruggling = 0;
+		consecutiveToolFailures = 0;
+		lastFailureTag = "";
 		hasAlerted = false;
 		strugglingTurns = [];
 	}
@@ -240,7 +264,9 @@ export default function (pi: ExtensionAPI) {
 					`Model:     ${active ? "🟡 Local (monitoring ON)" : "🟢 Cloud (monitoring OFF)"}`,
 					`Auto-mode: ${cfg.autoMode ? "✅ ON (switches automatically)" : "🔕 OFF (asks first)"}`,
 					`Threshold: ${cfg.turnThreshold} turns`,
+					`Tool fail threshold: ${cfg.toolFailureThreshold ?? DEFAULT_TOOL_FAILURE_THRESHOLD} consecutive`,
 					`Struggling turns: ${consecutiveStruggling} consecutive`,
+					`Tool failures:  ${consecutiveToolFailures} consecutive`,
 					`Turns this task: ${turnIndex}`,
 					hasAlerted ? "⚠️ Alert was shown for this task" : "✅ No alert yet",
 					"",
@@ -272,11 +298,37 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// ── Tool execution monitoring: track consecutive failures ──────
+
+	pi.on("tool_execution_end", async (event: any, ctx: any) => {
+		if (!isLocalModel(ctx.model)) return;
+		if (event.isError) {
+			const tag = failureTag(event);
+			if (tag === lastFailureTag) {
+				consecutiveToolFailures++;
+			} else {
+				// Different tool failed — start a new streak.
+				consecutiveToolFailures = 1;
+				lastFailureTag = tag;
+			}
+		} else {
+			// Any successful tool call breaks the streak.
+			consecutiveToolFailures = 0;
+			lastFailureTag = "";
+		}
+	});
+
 	// ── Per-task / per-turn monitoring ──────────────────────────────
 
 	pi.on("before_agent_start", async (_event: any, ctx: any) => {
 		if (!isLocalModel(ctx.model)) {
-			// On Claude — offer / auto-switch back to local for the new task.
+			// If the previous model was Claude, the user chose to go there.
+			// Stay on Claude — don't interfere. They can switch back manually.
+			if (prevModelWasClaude) {
+				prevModelWasClaude = false;
+				return;
+			}
+			// Otherwise: struggle-driven switch. Normal task-boundary logic.
 			const cfg = resolveConfig();
 			if (!cfg) return;
 
@@ -324,11 +376,20 @@ export default function (pi: ExtensionAPI) {
 
 		consecutiveStruggling = isStruggling ? consecutiveStruggling + 1 : 0;
 
-		const turnState: TurnState = { turnIndex, isStruggling, struggleReasons };
+		const toolFailureCount =
+			cfg.toolFailureThreshold ?? DEFAULT_TOOL_FAILURE_THRESHOLD;
+		const turnState: TurnState = {
+			turnIndex,
+			isStruggling,
+			struggleReasons,
+			toolFailures: consecutiveToolFailures,
+		};
 
 		const shouldAlert =
 			turnIndex >= cfg.turnThreshold &&
-			(consecutiveStruggling >= 1 || turnIndex >= cfg.turnThreshold * 2);
+			(consecutiveStruggling >= 1 ||
+				consecutiveToolFailures >= toolFailureCount ||
+				turnIndex >= cfg.turnThreshold * 2);
 
 		if (shouldAlert && !hasAlerted) {
 			hasAlerted = true;
@@ -388,10 +449,13 @@ export default function (pi: ExtensionAPI) {
 	) {
 		if (!ctx.hasUI) return;
 
+		// Build a human-readable reason string from whichever signals fired.
 		const struggleSummary =
 			turnState.struggleReasons.length > 0
 				? `Detected uncertainty: "${turnState.struggleReasons[0]}"`
-				: `Agent has been turning for ${turnState.turnIndex} turns on this task without a clean resolution`;
+				: turnState.toolFailures > 0
+					? `${turnState.toolFailures} consecutive tool failure(s) without a successful call`
+					: `Agent has been turning for ${turnState.turnIndex} turns on this task without a clean resolution`;
 
 		if (cfg.autoMode) {
 			ctx.ui.notify(
@@ -405,6 +469,9 @@ export default function (pi: ExtensionAPI) {
 				"",
 				`⏱️ ${turnState.turnIndex} turns burned this task (threshold: ${cfg.turnThreshold})`,
 				struggleSummary,
+				turnState.toolFailures > 0
+					? `🔴 ${turnState.toolFailures} consecutive tool failure(s)`
+					: "",
 				"",
 				"Switch to Claude to continue with more capability?",
 			].join("\n");

@@ -4,10 +4,11 @@ A [pi](https://pi.dev/) extension that watches your local model struggle and swi
 
 ## How it works
 
-Two simple signals, both observable at runtime — **no keyword guessing**, scoped to the **current task** (reset on every new user prompt, not cumulative for the whole session):
+Three simple signals, all observable at runtime — **no keyword guessing**, scoped to the **current task** (reset on every new user prompt, not cumulative for the whole session):
 
 1. **Turn count** — how many turns the agent burns on this task
 2. **Struggle phrases** — the assistant saying "I'm not sure", "let me try again", etc.
+3. **Tool failure streak** — the same tool failing 2+ consecutive times (restarts when any tool succeeds). Catches struggle the model never verbalises: an edit tool that keeps failing, a grep that returns nothing repeatedly, etc.
 
 When the current task exceeds your configured turn threshold AND shows at least one struggle signal, you get a prompt to switch to Claude. The switch happens **in-session** — no new session is created, Claude picks up with full history intact.
 
@@ -33,6 +34,7 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 | `claudeModelId` | `claude-sonnet-4-5` | Claude model to switch to. Falls back to the first available Anthropic model if not found. |
 | `turnThreshold` | `5` | Turns before the alert can fire for a task. |
 | `struggleConsecutive` | `2` | Consecutive struggling turns required (currently informational). |
+| `toolFailureThreshold` | `3` | Same tool failing consecutively before alert triggers. |
 | `autoMode` | `true` | `true` = switch automatically (both ways). `false` = show a confirm prompt before each switch. |
 | `strugglePatterns` | (see example) | Lowercase phrases to watch for in assistant responses. |
 
@@ -48,7 +50,10 @@ Edit `config/config.json` (gitignored — your personal settings stay local):
 ## Alert triggers
 
 - Agent has made ≥ `turnThreshold` turns on **this task**, AND
-- At least 1 struggle phrase detected (or the task has burned ≥ 2× the threshold regardless)
+- At least one of:
+  - 1+ struggle phrase detected in the latest assistant message
+  - ≥ `toolFailureThreshold` (default 3) consecutive tool failures from the same tool
+  - ≥ 2× `turnThreshold` turns regardless of signals (catches long silent struggles)
 
 The alert fires at most once per task. After switching, monitoring resets automatically on the next task.
 
@@ -66,4 +71,4 @@ pi-route-model/
 
 ## Known limitations
 
-- Struggle detection is phrase-based — it can miss struggle not expressed in words, and can rarely false-positive on an assistant message that happens to contain a matching phrase.
+- Struggle detection is now multi-signal (phrases + tool failures), reducing blind spots but still missing edge cases such as tools that silently fail without raising `isError`.
